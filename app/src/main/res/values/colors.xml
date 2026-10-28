@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colores sacados del logo: azul marino del anillo, amarillo del pin, verde del cerro, azul del agua. -->
+<resources>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+    <color name="marca_azul">#FF002F65</color>
+    <color name="marca_amarillo">#FFFFC501</color>
+    <color name="marca_verde">#FF007F4C</color>
+    <color name="marca_agua">#FF0084E9</color>
+    <color name="ic_launcher_bg">#FF002F65</color>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto Backup de Android. Se excluye lo que clona la identidad o abre los chats:
+    llave privada, secreto local y la base con secretKey de los grupos.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="travesias_identidad.xml" />
+    <exclude domain="sharedpref" path="travesias_huella.xml" />
+    <exclude domain="sharedpref" path="travesias_catalogo.xml" />
+    <exclude domain="database" path="travesias_ecuador.db" />
+</full-backup-content>

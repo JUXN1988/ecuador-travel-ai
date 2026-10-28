@@ -1,0 +1,26 @@
+name: Reportar un error / Bug report
+description: Algo no funcionó en la app / Something didn't work in the app
+labels: [bug]
+body:
+  - type: textarea
+    id: que
+    attributes:
+      label: ¿Qué pasó? / What happened?
+      description: Pasos para repetirlo y qué esperabas / Steps to reproduce and what you expected
+    validations:
+      required: true
+  - type: input
+    id: telefono
+    attributes:
+      label: Teléfono y versión de Android / Phone and Android version
+      placeholder: "Ej.: Samsung A54, Android 14"
+  - type: input
+    id: pantalla
+    attributes:
+      label: Pantalla / Screen
+      placeholder: "Inicio, Mapa, Descubrir, Mi Ruta, Comunidad, Guía IA, Kit…"
+  - type: textarea
+    id: captura
+    attributes:
+      label: Texto del error o captura / Error text or screenshot
+      description: Nunca pegues tus claves de API ni datos personales / Never paste API keys or personal data

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Qué carpetas privadas de la app se pueden abrir con otras apps (galería, reproductor, PDF…).
+  Solo estas dos, y solo mientras dura el permiso temporal que se da al abrir el archivo:
+  el resto del almacenamiento de Travesías sigue siendo inaccesible desde fuera.
+-->
+<paths>
+    <files-path name="adjuntos" path="adjuntos/" />
+    <files-path name="fotos" path="fotos/" />
+</paths>

@@ -1,0 +1,409 @@
+rules_version = '2';
+
+// ============================================================================
+//  Travesías en Ecuador — reglas de Firestore
+//
+//  CÓMO PONERLAS (2 minutos, gratis):
+//   1. Consola de Firebase → Authentication → Método de acceso: activa
+//      "Anónimo" y "Correo electrónico/contraseña". Los dos son gratis
+//      (lo que se cobra es el SMS, y aquí no se usa).
+//   2. Firestore Database → pestaña "Reglas" → pega TODO este archivo → Publicar.
+//
+//  CÓMO SABE FIREBASE QUIÉN ES CADA UNO
+//  La app no le pide correo a nadie. De la llave privada del viajero deriva un
+//  correo interno "huella@travesias.app" y una contraseña larguísima, y con eso
+//  entra al acceso por correo de Firebase. Como la llave es la misma en todos
+//  sus teléfonos, su identificador también lo es, y estas reglas pueden exigir
+//  que cada quien solo toque lo suyo. Nadie puede hacerse pasar por otro sin su
+//  llave privada, que jamás sale del teléfono.
+//
+//  Aun así, la seguridad de verdad está en el contenido: los mensajes van
+//  cifrados y firmados. Si alguien se saltara todo esto, encontraría ruido.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------- ayudas ----------------
+    function conectado() {
+      return request.auth != null;
+    }
+    function correo() {
+      return conectado() ? request.auth.token.get('email', '') : '';
+    }
+    /** La huella del viajero, sacada de su correo interno. '' si entró como anónimo. */
+    function miHuella() {
+      return correo().matches('.*@travesias[.]app') ? correo().split('@')[0] : '';
+    }
+    function soyYo(huella) {
+      return huella != '' && huella == miHuella();
+    }
+    /** Miembro del grupo: por huella (cuentas nuevas) o por uid (grupos de antes). */
+    function miembro(datos) {
+      return conectado() && datos.keys().hasAny(['memberUids']) &&
+             (miHuella() in datos.memberUids || request.auth.uid in datos.memberUids);
+    }
+    function pequeno() {
+      return request.resource.data.size() < 40;
+    }
+
+    /**
+     * Administrador: su huella tiene un documento en /admins.
+     * Se pone A MANO desde la consola de Firebase (crear la colección `admins` y dentro un
+     * documento cuyo ID sea la huella `tv_...` del administrador; el contenido da igual).
+     * Así se añade o se quita un admin sin volver a publicar las reglas, y nadie se puede
+     * nombrar a sí mismo: la colección no se puede escribir desde la app.
+     */
+    function esAdmin() {
+      return conectado() && miHuella() != '' &&
+             exists(/databases/$(database)/documents/admins/$(miHuella()));
+    }
+
+    // ------------------------------------------------------------------
+    //  Quién es administrador
+    // ------------------------------------------------------------------
+    //  Cualquiera con cuenta puede LEER su propio documento (así la app sabe si enseñar
+    //  las herramientas de administrador). Nadie puede escribir aquí desde la app: los
+    //  admins se dan de alta a mano en la consola.
+    match /admins/{huella} {
+      allow get: if conectado();
+      allow list: if esAdmin();
+      allow write: if false;
+    }
+
+    // ------------------------------------------------------------------
+    //  Identidades: usuario, llave pública y la llave privada EN SOBRE CERRADO
+    // ------------------------------------------------------------------
+    //  Se puede leer un documento concreto (hace falta para entrar y para
+    //  verificar a alguien), pero NO listar la colección: nadie se baja el
+    //  padrón de usuarios.
+    //  Un nombre de usuario solo lo puede tomar quien tenga la llave que dice
+    //  tener, y una vez tomado NADIE más lo puede pisar.
+    match /identities/{usuario} {
+      allow get: if conectado();
+      // Nadie se baja el padrón de usuarios... salvo el administrador, que lo necesita
+      // para encontrar las cuentas huérfanas (registros que nunca se llegaron a usar).
+      allow list: if esAdmin();
+
+      allow create: if conectado()
+                    && request.resource.data.keys().hasAll(['u', 'k', 'w', 'fp', 'sig'])
+                    && request.resource.data.u == usuario
+                    && soyYo(request.resource.data.fp)
+                    && request.resource.data.w is string
+                    && request.resource.data.w.size() < 4000
+                    && pequeno();
+
+      // Cambiar la contraseña reescribe el sobre, pero NUNCA la llave pública,
+      // el nombre ni la huella: si eso se pudiera cambiar, se secuestraría la cuenta.
+      allow update: if soyYo(resource.data.fp)
+                    && request.resource.data.k == resource.data.k
+                    && request.resource.data.u == resource.data.u
+                    && request.resource.data.fp == resource.data.fp;
+
+      // Una cuenta solo la borra un administrador. El dueño no se borra a sí mismo desde
+      // aquí a propósito: si pudiera, un descuido dejaría su @usuario libre para otro.
+      allow delete: if esAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    //  Correo de recuperación: huella del correo -> @usuario
+    // ------------------------------------------------------------------
+    //  Sirve para UNA sola cosa: que quien olvidó su @usuario lo recupere escribiendo su
+    //  correo. Aquí NO se guarda ningún correo, solo su huella (sha256 con sal), así que
+    //  de esta colección no se puede sacar la dirección de nadie. Y no se puede LISTAR:
+    //  hay que saber el correo exacto para preguntar por él, igual que con las identidades.
+    match /porCorreo/{huellaCorreo} {
+      allow get: if conectado();
+      allow list: if false;
+      allow create, update: if conectado()
+                            && soyYo(request.resource.data.fp)
+                            && request.resource.data.keys().hasOnly(['u', 'fp']);
+      allow delete: if soyYo(resource.data.fp) || esAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    //  Cofre: los grupos de cada viajero y sus llaves, cifrados
+    // ------------------------------------------------------------------
+    //  El servidor no puede leerlo (va cifrado con una llave que sale de la
+    //  llave privada) y solo su dueño puede tocarlo.
+    match /vaults/{huella} {
+      allow read, write: if soyYo(huella);
+      // Al borrar una cuenta huérfana su cofre se va con ella. El admin NO lo puede leer:
+      // va cifrado con una llave que sale de la contraseña de su dueño.
+      allow delete: if esAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    //  Vitrina: lo MÍNIMO para que otros viajeros te encuentren
+    // ------------------------------------------------------------------
+    //  Es opcional. Cualquiera con cuenta puede buscar aquí; solo el dueño
+    //  escribe o borra la suya.
+    match /showcase/{huella} {
+      allow read: if conectado();
+      allow create, update: if soyYo(huella) && pequeno();
+      allow delete: if soyYo(huella) || esAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    //  Privacidad del perfil: público / solo amigos / privado
+    // ------------------------------------------------------------------
+    //  `vis` dice quién puede ver el álbum. `friends` son las huellas de
+    //  quienes el dueño agregó como amigo. Solo él escribe esta ficha.
+    match /privacy/{huella} {
+      allow get: if conectado();
+      allow list: if false;
+      allow create, update: if soyYo(huella) && pequeno();
+      allow delete: if soyYo(huella) || esAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    //  Álbum: metadato chiquito aquí; la foto viaja a trozos en /bin (puente).
+    //  El dueño siempre lee y escribe. Los demás según privacy; sin ficha = público.
+    match /albums/{huella} {
+      function visAlbum() {
+        return exists(/databases/$(database)/documents/privacy/$(huella))
+               ? get(/databases/$(database)/documents/privacy/$(huella)).data.get('vis', 'PUBLIC')
+               : 'PUBLIC';
+      }
+      function amigosDelAlbum() {
+        return exists(/databases/$(database)/documents/privacy/$(huella))
+               ? get(/databases/$(database)/documents/privacy/$(huella)).data.get('friends', [])
+               : [];
+      }
+      function puedeVerAlbum() {
+        return soyYo(huella) || (
+          conectado() && (
+            visAlbum() == 'PUBLIC' ||
+            (visAlbum() == 'FRIENDS' && miHuella() in amigosDelAlbum())
+          )
+        );
+      }
+
+      // Metadato del álbum: pie, lugar, menciones y una previsualización MINÚSCULA.
+      // La foto grande NO vive aquí: viaja a trozos en /bin cuando alguien la pide.
+      match /photos/{fotoId} {
+        allow read: if puedeVerAlbum();
+        allow create, update: if soyYo(huella)
+                              && request.resource.data.get('by', '') == huella
+                              && request.resource.data.get('th', '').size() < 12000;
+        allow delete: if soyYo(huella);
+      }
+
+      // Puente: trozos de la foto. Se leen al abrir el perfil/feed, una vez, y quedan
+      // en el teléfono de quien mira. Firestore no es la galería.
+      match /bin/{fotoId} {
+        allow read: if puedeVerAlbum();
+        allow create, update, delete: if soyYo(huella);
+
+        match /parts/{parteId} {
+          allow read: if puedeVerAlbum();
+          allow create: if soyYo(huella)
+                        && request.resource.data.d is string
+                        && request.resource.data.d.size() < 900000;
+          allow update: if false;
+          allow delete: if soyYo(huella);
+        }
+      }
+
+      // ----------------------------------------------------------------
+      //  "Me gusta" y comentarios de cada publicación
+      // ----------------------------------------------------------------
+      //  Quien puede VER el álbum puede reaccionar y comentar; nada más. La reacción
+      //  lleva por nombre la huella de quien la pone, así que nadie puede reaccionar
+      //  por otro ni poner dos veces. Un comentario lo borra su autor o el dueño de la
+      //  publicación (en su sitio manda él).
+      match /social/{setId} {
+        allow read: if puedeVerAlbum();
+        allow write: if false;
+
+        match /likes/{quien} {
+          allow read: if puedeVerAlbum();
+          allow create, update: if puedeVerAlbum() && soyYo(quien)
+                                && request.resource.data.get('e', '').size() < 20
+                                && pequeno();
+          allow delete: if soyYo(quien) || soyYo(huella);
+        }
+
+        match /comments/{comentarioId} {
+          allow read: if puedeVerAlbum();
+          allow create: if puedeVerAlbum()
+                        && soyYo(request.resource.data.get('by', ''))
+                        && request.resource.data.get('tx', '').size() > 0
+                        && request.resource.data.get('tx', '').size() < 1000
+                        && pequeno();
+          // Un comentario no se edita: si está mal, se borra y se escribe otro.
+          allow update: if false;
+          allow delete: if soyYo(resource.data.get('by', '')) || soyYo(huella);
+        }
+      }
+
+      // ----------------------------------------------------------------
+      //  Muro del perfil: lo que le escriben a uno en su ficha
+      // ----------------------------------------------------------------
+      match /wall/{comentarioId} {
+        allow read: if puedeVerAlbum();
+        allow create: if puedeVerAlbum()
+                      && soyYo(request.resource.data.get('by', ''))
+                      && request.resource.data.get('tx', '').size() > 0
+                      && request.resource.data.get('tx', '').size() < 1000
+                      && pequeno();
+        allow update: if false;
+        // Lo borra quien lo escribió y también el dueño del muro: su perfil, sus reglas.
+        allow delete: if soyYo(resource.data.get('by', '')) || soyYo(huella);
+      }
+    }
+
+    // ------------------------------------------------------------------
+    //  Grupos
+    // ------------------------------------------------------------------
+    //  El documento guarda el nombre CIFRADO y la lista de miembros. Se puede
+    //  leer con el id (hace falta para entrar con una invitación), pero sin la
+    //  llave del grupo no se entiende nada.
+    match /groups/{grupoId} {
+      allow get: if conectado();
+      // Listar solo devuelve grupos donde uno está: una consulta abierta se cae.
+      allow list: if miembro(resource.data);
+
+      allow create: if conectado() && miembro(request.resource.data);
+
+      // Un miembro actualiza el grupo: así invita a alguien (lo mete en `memberUids`, lo
+      // pone en `pend` hasta que acepte, y le deja en `dk` la llave del grupo cifrada SOLO
+      // para él). Quien todavía no es miembro únicamente puede añadirse a sí mismo, que es
+      // lo que pasa al entrar con una invitación.
+      //
+      // `pend` es la lista de invitados que aún no han dicho que sí. Aceptar = sacarse de
+      // ahí; rechazar = sacarse también de `memberUids`. Las dos cosas las hace el propio
+      // interesado, y por eso caen en la primera rama.
+      allow update: if miembro(resource.data) ||
+                    (
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'pend']) &&
+                      miembro(request.resource.data)
+                    );
+
+      allow delete: if conectado() && miHuella() == resource.data.get('o', '');
+
+      // ---------- mensajes ----------
+      match /posts/{postId} {
+        function grupo() {
+          return get(/databases/$(database)/documents/groups/$(grupoId)).data;
+        }
+        allow read: if miembro(grupo());
+
+        // Cada quien firma lo suyo: el autor tiene que ser uno mismo, así que ni
+        // saltándose la app se puede publicar en nombre de otro.
+        allow create: if miembro(grupo())
+                      && request.resource.data.get('a', request.resource.data.get('authorUid', '')) == miHuella()
+                      && request.resource.data.get('c', '').size() < 900000;
+
+        // Los mensajes no se editan; solo su autor los borra (es lo que hace la
+        // app al vaciar el buzón de más de 30 días).
+        allow update: if false;
+        allow delete: if resource.data.get('a', resource.data.get('authorUid', '')) == miHuella();
+      }
+
+      // ---------- adjuntos: fotos grandes, videos, audios y documentos ----------
+      //  Firebase Storage exige plan de pago, así que los archivos viajan por aquí: partidos
+      //  en trozos y cada trozo CIFRADO con la llave del grupo. Firestore solo ve base64 sin
+      //  sentido; ni el nombre del archivo está aquí (va dentro del mensaje, también cifrado).
+      //  Los trozos caducan a los 30 días igual que los mensajes: quien ya bajó el archivo lo
+      //  tiene en su teléfono para siempre.
+      match /blobs/{bultoId} {
+        function grupoDelBulto() {
+          return get(/databases/$(database)/documents/groups/$(grupoId)).data;
+        }
+        allow read: if miembro(grupoDelBulto());
+        allow create, update: if miembro(grupoDelBulto())
+                              && request.resource.data.get('by', '') == miHuella();
+        allow delete: if resource.data.get('by', '') == miHuella();
+
+        match /parts/{parteId} {
+          function grupoDeLaParte() {
+            return get(/databases/$(database)/documents/groups/$(grupoId)).data;
+          }
+          allow read: if miembro(grupoDeLaParte());
+          // Un documento de Firestore no pasa de 1 MB; la app manda trozos de ~640 KB.
+          allow create: if miembro(grupoDeLaParte())
+                        && request.resource.data.d is string
+                        && request.resource.data.d.size() < 900000;
+          allow update: if false;
+          allow delete: if miembro(grupoDeLaParte());
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------
+    //  Catálogo común de lugares: lo que descubre uno le sirve a todos
+    // ------------------------------------------------------------------
+    //  Aquí viven los lugares (nombre, coordenadas, costos, horarios, cómo llegar,
+    //  contactos del negocio, fotos de internet). NADA personal: ni perfiles, ni
+    //  rutas, ni qué lugares tiene guardados cada quien, ni sus fotos propias.
+    //  Cualquiera con cuenta puede leer y aportar; el aporte queda firmado con la
+    //  huella de quien lo subió, y nadie puede subir a nombre de otro.
+    match /catalog/{lugarId} {
+      allow read: if conectado();
+
+      allow create: if conectado()
+                    && request.resource.data.get('by', '') in [miHuella(), request.auth.uid]
+                    && request.resource.data.get('name', '').size() > 2
+                    && request.resource.data.get('name', '').size() < 200
+                    && request.resource.data.p is string
+                    && request.resource.data.p.size() < 20000
+                    && request.resource.data.lat is number
+                    && request.resource.data.lng is number
+                    // Solo Ecuador (continente e islas): así no se cuela ruido de otro lado.
+                    && request.resource.data.lat > -5.5 && request.resource.data.lat < 2.0
+                    && request.resource.data.lng > -93.0 && request.resource.data.lng < -74.0
+                    && request.resource.data.updatedAt is int;
+
+      // Actualizar: solo el autor original. Si no se compara con resource.data.by,
+      // cualquiera con sesión pisaría el lugar de otro.
+      allow update: if conectado()
+                    && request.resource.data.get('by', '') == resource.data.get('by', '')
+                    && resource.data.get('by', '') in [miHuella(), request.auth.uid]
+                    && request.resource.data.get('name', '').size() > 2
+                    && request.resource.data.get('name', '').size() < 200
+                    && request.resource.data.p is string
+                    && request.resource.data.p.size() < 20000
+                    && request.resource.data.lat is number
+                    && request.resource.data.lng is number
+                    && request.resource.data.lat > -5.5 && request.resource.data.lat < 2.0
+                    && request.resource.data.lng > -93.0 && request.resource.data.lng < -74.0
+                    && request.resource.data.updatedAt is int;
+
+      // Un lugar no se borra: si está mal, se corrige.
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------
+    //  Comentarios y tips de los lugares
+    // ------------------------------------------------------------------
+    //  Son públicos a propósito (sirven a todos los viajeros), pero cada
+    //  comentario solo lo escribe o borra quien lo hizo.
+    match /places/{placeId}/comments/{commentId} {
+      allow read: if conectado();
+      allow create: if conectado()
+                    && request.resource.data.get('authorUid', '') in [miHuella(), request.auth.uid]
+                    && request.resource.data.get('text', '').size() < 2000;
+      allow update: if false;
+      allow delete: if conectado()
+                    && resource.data.get('authorUid', '') in [miHuella(), request.auth.uid];
+    }
+
+    // ------------------------------------------------------------------
+    //  Restos de la versión anterior: se dejan de usar y se cierran
+    // ------------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if conectado();
+      allow write: if conectado() && uid == request.auth.uid;
+    }
+    match /usernames/{nombre} {
+      allow read: if conectado();
+      allow write: if false;
+    }
+
+    // Todo lo demás, cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

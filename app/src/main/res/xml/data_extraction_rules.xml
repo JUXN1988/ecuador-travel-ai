@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup en la nube y transferencia a otro teléfono (API 31+).
+    Misma exclusión que backup_rules: identidad y base social no salen del aparato.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="travesias_identidad.xml" />
+        <exclude domain="sharedpref" path="travesias_huella.xml" />
+        <exclude domain="sharedpref" path="travesias_catalogo.xml" />
+        <exclude domain="database" path="travesias_ecuador.db" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="travesias_identidad.xml" />
+        <exclude domain="sharedpref" path="travesias_huella.xml" />
+        <exclude domain="sharedpref" path="travesias_catalogo.xml" />
+        <exclude domain="database" path="travesias_ecuador.db" />
+    </device-transfer>
+</data-extraction-rules>

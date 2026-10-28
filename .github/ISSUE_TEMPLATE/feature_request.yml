@@ -1,0 +1,14 @@
+name: Sugerir una mejora / Suggest an improvement
+description: Ideas para mejorar Travesías en Ecuador / Ideas to improve the app
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: ¿Qué te gustaría? / What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: viaje
+    attributes:
+      label: ¿En qué viaje o ruta te serviría? / On which trip or route would it help?

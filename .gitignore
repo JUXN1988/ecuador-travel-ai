@@ -1,0 +1,29 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.env
+debug.keystore
+
+# Travesías en Ecuador — firma y secretos (NUNCA subir)
+keystore.properties
+*.jks
+/release
+app/google-services.json
+_src_snapshot.tgz
+
+# Logs de compilación
+build_logs/
+release/

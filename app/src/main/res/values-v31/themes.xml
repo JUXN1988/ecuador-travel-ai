@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pantalla de arranque con el icono de la app (Android 12 en adelante). -->
+    <style name="Theme.Travesias" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_fg</item>
+    </style>
+    <style name="Theme.MyApplication" parent="Theme.Travesias" />
+</resources>

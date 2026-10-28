@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Ubicación para centrar el mapa y mostrar la posición del viajero (opcional, se pide en tiempo de ejecución) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Notificaciones de mensajes y avisos de ruta (Android 13+ las exige en tiempo de ejecución) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Servicio en segundo plano: sigue escuchando mensajes y tu ruta con la app minimizada -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <application
+        android:name=".TravesiasApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:theme="@style/Theme.Travesias">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Travesias">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Para poder ABRIR los adjuntos que llegan por el chat (video, PDF, audio) con la app
+            que el viajero prefiera. Sin esto, Android bloquea pasarle un archivo a otra app.
+            No exporta nada: cada apertura da un permiso temporal sobre ESE archivo.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.archivos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/rutas_archivos" />
+        </provider>
+
+        <!-- Mantiene mensajes y avisos de ruta funcionando con la app minimizada -->
+        <service
+            android:name=".service.TravesiasBackgroundService"
+            android:exported="false"
+            android:foregroundServiceType="location|dataSync" />
+
+        <!-- "Compartir a Travesías en Ecuador" desde TikTok, Instagram, Facebook, YouTube, Chrome, WhatsApp… -->
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:exported="true"
+            android:label="@string/share_target_label"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Travesias">
+            <!-- Texto compartido: es como llegan los enlaces de TikTok, Instagram y Facebook -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+            <!-- Algunas apps comparten el video/imagen junto al enlace; también lo aceptamos -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <!-- Abrir enlaces de las redes desde otras apps (el viajero elige Travesías) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="vm.tiktok.com" />
+                <data android:scheme="https" android:host="vt.tiktok.com" />
+                <data android:scheme="https" android:host="www.tiktok.com" />
+                <data android:scheme="https" android:host="fb.watch" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="travesias.ec" android:pathPrefix="/lugar" />
+                <!-- Invitación a un grupo: se comparte por WhatsApp y se entra de un toque,
+                     sin que nadie tenga que teclear un código largo. -->
+                <data android:scheme="https" android:host="travesias.ec" android:pathPrefix="/g/" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
